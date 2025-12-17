@@ -8,5 +8,5 @@ SmartRecruiter is an intelligent Applicant Tracking System (ATS) that combines A
 - NLP + RAG modules for CV parsing and semantic ranking
 - Dockerized setup for consistency
 
-## 🛠️ Setup
+## Setup
 ### Backend
