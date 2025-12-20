@@ -1,0 +1,2 @@
+# SmartRecruiter Backend Application
+

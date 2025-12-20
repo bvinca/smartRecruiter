@@ -1,0 +1,88 @@
+.applicant-applications {
+  padding: 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.applications-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.application-card {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.application-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.application-title {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.application-title h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.25rem 0;
+}
+
+.application-date {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.application-details {
+  margin-bottom: 1rem;
+}
+
+.job-location {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.job-description {
+  color: #4b5563;
+  line-height: 1.6;
+}
+
+.application-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.status-icon {
+  margin-right: 0.5rem;
+}
+
+.status-icon.pending {
+  color: #3b82f6;
+}
+
+.status-icon.success {
+  color: #10b981;
+}
+
+.status-icon.rejected {
+  color: #ef4444;
+}
+

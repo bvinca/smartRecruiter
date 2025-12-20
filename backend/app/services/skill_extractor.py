@@ -1,0 +1,100 @@
+"""
+Skill Extractor - Enhanced keyword-based skill detection
+"""
+from typing import List, Set
+import re
+
+
+class SkillExtractor:
+    """Extract technical and soft skills from resume text"""
+    
+    def __init__(self):
+        # Technical Skills
+        self.technical_skills = {
+            # Programming Languages
+            'python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'go', 'rust', 'kotlin', 'swift',
+            'php', 'ruby', 'perl', 'scala', 'r', 'matlab', 'dart', 'lua',
+            
+            # Web Technologies
+            'react', 'vue', 'angular', 'node.js', 'express', 'django', 'flask', 'fastapi', 'spring',
+            'html', 'css', 'sass', 'less', 'bootstrap', 'tailwind', 'jquery', 'next.js', 'nuxt.js',
+            'graphql', 'rest api', 'soap', 'webpack', 'vite', 'npm', 'yarn',
+            
+            # Databases
+            'sql', 'postgresql', 'mysql', 'mongodb', 'redis', 'cassandra', 'elasticsearch',
+            'oracle', 'sqlite', 'dynamodb', 'neo4j', 'couchdb', 'firebase',
+            
+            # Cloud & DevOps
+            'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ansible', 'jenkins',
+            'github actions', 'gitlab ci', 'circleci', 'travis ci', 'circleci',
+            'linux', 'bash', 'shell scripting', 'powershell', 'vagrant', 'packer',
+            
+            # Machine Learning & AI
+            'machine learning', 'deep learning', 'nlp', 'computer vision', 'tensorflow', 'pytorch',
+            'keras', 'scikit-learn', 'pandas', 'numpy', 'opencv', 'nltk', 'spacy',
+            
+            # Mobile Development
+            'android', 'ios', 'react native', 'flutter', 'xamarin', 'ionic',
+            
+            # Other Technologies
+            'git', 'svn', 'mercurial', 'microservices', 'api design', 'agile', 'scrum', 'kanban',
+            'ci/cd', 'tdd', 'bdd', 'devops', 'sre', 'monitoring', 'logging', 'kubernetes',
+        }
+        
+        # Soft Skills
+        self.soft_skills = {
+            'communication', 'leadership', 'teamwork', 'problem solving', 'critical thinking',
+            'time management', 'project management', 'collaboration', 'adaptability', 'creativity',
+            'analytical thinking', 'attention to detail', 'multitasking', 'negotiation',
+            'presentation', 'public speaking', 'mentoring', 'coaching', 'conflict resolution',
+        }
+        
+        # All skills combined
+        self.all_skills = self.technical_skills | self.soft_skills
+    
+    def extract_skills(self, text: str) -> List[str]:
+        """
+        Extract skills from resume text using keyword matching
+        Returns a list of unique skills found
+        """
+        text_lower = text.lower()
+        found_skills = set()
+        
+        # Check for exact matches and variations
+        for skill in self.all_skills:
+            # Exact match
+            if skill in text_lower:
+                found_skills.add(skill.title())
+            
+            # Check for variations (e.g., "Python" vs "python programming")
+            skill_pattern = r'\b' + re.escape(skill) + r'\b'
+            if re.search(skill_pattern, text_lower, re.IGNORECASE):
+                found_skills.add(skill.title())
+        
+        # Check for common skill patterns
+        skill_patterns = [
+            r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:developer|engineer|specialist|expert|professional)',
+            r'(?:proficient|experienced|skilled|expert)\s+in\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)',
+        ]
+        
+        for pattern in skill_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                match_lower = match.lower()
+                # Check if it's a known skill
+                for skill in self.all_skills:
+                    if skill in match_lower or match_lower in skill:
+                        found_skills.add(skill.title())
+        
+        return sorted(list(found_skills))
+    
+    def extract_technical_skills(self, text: str) -> List[str]:
+        """Extract only technical skills"""
+        all_skills = self.extract_skills(text)
+        return [s for s in all_skills if s.lower() in self.technical_skills]
+    
+    def extract_soft_skills(self, text: str) -> List[str]:
+        """Extract only soft skills"""
+        all_skills = self.extract_skills(text)
+        return [s for s in all_skills if s.lower() in self.soft_skills]
+
