@@ -19,6 +19,21 @@ resume_parser = ResumeParser()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Lazy-load RAG pipeline only when needed
+_rag_pipeline = None
+
+def get_rag_pipeline():
+    """Get or create RAGPipeline (lazy initialization)"""
+    global _rag_pipeline
+    if _rag_pipeline is None:
+        try:
+            from ai.rag import RAGPipeline
+            _rag_pipeline = RAGPipeline()
+        except (ValueError, Exception) as e:
+            print(f"RAG pipeline not available: {e}")
+            _rag_pipeline = None
+    return _rag_pipeline
+
 
 @router.get("/", response_model=schemas.ProfileResponse)
 def get_profile(
@@ -150,6 +165,160 @@ async def upload_resume(
             "resume_text": parsed_data.get("resume_text", "")
         }
     }
+
+
+@router.post("/resume/generate-summary", response_model=dict)
+def generate_resume_summary(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Generate AI summary for current user's resume (applicant only)"""
+    print(f"Generate summary called for user: {current_user.email}, role: {current_user.role}")
+    
+    if current_user.role != "applicant":
+        raise HTTPException(status_code=403, detail="Only applicants can generate resume summaries")
+    
+    # Get the most recent application with parsed resume data
+    latest_application = db.query(models.Application).filter(
+        models.Application.user_id == current_user.id,
+        models.Application.applicant_id.isnot(None)
+    ).order_by(models.Application.created_at.desc()).first()
+    
+    print(f"Latest application: {latest_application}")
+    
+    applicant = None
+    job = None
+    
+    if latest_application and latest_application.applicant_id:
+        # Get the applicant record from application
+        applicant = db.query(models.Applicant).filter(
+            models.Applicant.id == latest_application.applicant_id
+        ).first()
+        
+        if applicant:
+            # Get the job for context
+            job = db.query(models.Job).filter(models.Job.id == applicant.job_id).first() if applicant.job_id else None
+    
+    # If no applicant from application, try to find by email
+    if not applicant:
+        applicant = db.query(models.Applicant).filter(
+            models.Applicant.email == current_user.email
+        ).order_by(models.Applicant.created_at.desc()).first()
+        
+        if applicant and applicant.job_id:
+            job = db.query(models.Job).filter(models.Job.id == applicant.job_id).first()
+    
+    if not applicant:
+        raise HTTPException(
+            status_code=404, 
+            detail="No resume found. Please upload a resume when applying to a job first."
+        )
+    
+    if not applicant.resume_text:
+        raise HTTPException(
+            status_code=404, 
+            detail="Resume text not found. Please upload a resume with text content."
+        )
+    
+    if not job:
+        raise HTTPException(
+            status_code=404, 
+            detail="No job found for your resume. Please apply to a job first to generate an AI summary."
+        )
+    
+    print(f"Using applicant: {applicant.id}, job: {job.id if job else 'None'}")
+    
+    # Get the applicant record
+    applicant = db.query(models.Applicant).filter(
+        models.Applicant.id == latest_application.applicant_id
+    ).first()
+    
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant record not found")
+    
+    # Get the job for context
+    job = db.query(models.Job).filter(models.Job.id == applicant.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Generate summary using RAG pipeline
+    rag_pipeline = get_rag_pipeline()
+    if not rag_pipeline:
+        raise HTTPException(
+            status_code=503,
+            detail="AI features not available. OpenAI API key not configured."
+        )
+    
+    try:
+        print(f"Calling RAG pipeline with resume_text length: {len(applicant.resume_text or '')}, job description: {job.description[:100] if job.description else 'None'}...")
+        summary_data = rag_pipeline.generate_summary(
+            resume_text=applicant.resume_text or "",
+            job_description=job.description or ""
+        )
+        
+        print(f"Summary data received: {summary_data}")
+        
+        # Only store summary if it's not the fallback error message
+        summary_text = summary_data.get("summary", "")
+        error_detail = summary_data.get("error", "")
+        
+        if summary_text and not summary_text.startswith("Unable to generate AI summary"):
+            applicant.ai_summary = summary_text
+            print(f"Storing summary: {summary_text[:100]}...")
+        else:
+            applicant.ai_summary = None
+            if error_detail:
+                print(f"Summary generation failed: {error_detail}")
+            else:
+                print("Summary is error message, not storing")
+        
+        # Generate interview questions
+        try:
+            questions = rag_pipeline.generate_interview_questions(
+                resume_text=applicant.resume_text or "",
+                job_description=job.description,
+                num_questions=5
+            )
+            if questions and isinstance(questions, list) and len(questions) > 0:
+                if not (isinstance(questions[0], str) and "Unable to generate" in questions[0]):
+                    applicant.interview_questions = questions
+                else:
+                    applicant.interview_questions = None
+            else:
+                applicant.interview_questions = None
+        except Exception as e:
+            print(f"Error generating interview questions: {e}")
+            applicant.interview_questions = None
+        
+        db.commit()
+        db.refresh(applicant)
+        
+        # Return the actual summary from the data, not the stored value
+        # (since we might not have stored it if it was an error)
+        return_summary = summary_data.get("summary", "")
+        error_detail = summary_data.get("error", "")
+        
+        if return_summary and return_summary.startswith("Unable to generate AI summary"):
+            # If it's an error, return None so frontend knows it failed
+            return_summary = None
+        
+        return {
+            "message": "AI summary generated successfully" if return_summary else (error_detail or "AI summary generation failed"),
+            "summary": return_summary,
+            "strengths": summary_data.get("strengths", []),
+            "weaknesses": summary_data.get("weaknesses", []),
+            "recommendations": summary_data.get("recommendations", []),
+            "interview_questions": applicant.interview_questions or [],
+            "error": error_detail if error_detail else None
+        }
+    except Exception as e:
+        import traceback
+        print(f"Error generating summary: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating AI summary: {str(e)}"
+        )
 
 
 @router.delete("/", response_model=dict)

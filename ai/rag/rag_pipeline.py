@@ -13,7 +13,8 @@ class RAGPipeline:
     def __init__(self):
         self.retriever = RAGRetriever()
         self.generator = RAGGenerator()
-        self.question_generator = QuestionGenerator()
+        # Lazy-load question generator only when needed
+        self._question_generator = None
     
     def generate_summary(self, resume_text: str, job_description: str) -> Dict[str, Any]:
         """
@@ -58,14 +59,52 @@ class RAGPipeline:
             resume_text: Resume text
             job_description: Job description
             num_questions: Number of questions
-        
+            
         Returns:
             List of interview questions
         """
+        # Lazy-load question generator only when needed
+        if self._question_generator is None:
+            self._question_generator = QuestionGenerator()
+        
         # Use question generator (doesn't need RAG context)
         parsed_data = {"resume_text": resume_text, "skills": [], "work_experience": []}
-        return self.question_generator.generate_interview_questions(
+        return self._question_generator.generate_interview_questions(
             parsed_data,
+            job_description,
+            num_questions
+        )
+    
+    def regenerate_questions_with_feedback(
+        self,
+        resume_text: str,
+        current_questions: List[str],
+        feedback: str,
+        job_description: str,
+        num_questions: int = 5
+    ) -> List[str]:
+        """
+        Regenerate interview questions based on recruiter feedback
+        
+        Args:
+            resume_text: Resume text
+            current_questions: Current list of questions
+            feedback: Recruiter's feedback
+            job_description: Job description
+            num_questions: Number of questions to generate
+            
+        Returns:
+            List of improved interview questions
+        """
+        # Lazy-load question generator only when needed
+        if self._question_generator is None:
+            self._question_generator = QuestionGenerator()
+        
+        parsed_data = {"resume_text": resume_text, "skills": [], "work_experience": []}
+        return self._question_generator.regenerate_questions_with_feedback(
+            parsed_data,
+            current_questions,
+            feedback,
             job_description,
             num_questions
         )

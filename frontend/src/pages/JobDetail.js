@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MapPin, DollarSign, Briefcase, Upload, ArrowLeft, CheckCircle } from 'lucide-react';
+import { MapPin, DollarSign, Briefcase, Upload, ArrowLeft, CheckCircle, Sparkles } from 'lucide-react';
 import { jobsApi } from '../api/jobs';
 import { applicationsApi } from '../api/applications';
+import { enhancementApi } from '../api/enhancement';
 import { useAuth } from '../context/AuthContext';
 import ApplicationSuccess from '../components/ApplicationSuccess';
 import toast from 'react-hot-toast';
@@ -15,6 +16,7 @@ const JobDetail = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedFile, setSelectedFile] = useState(null);
+  const [enhancedDescription, setEnhancedDescription] = useState(null);
 
   const { data: job, isLoading, error: jobError } = useQuery({
     queryKey: ['job', id],
@@ -44,6 +46,18 @@ const JobDetail = () => {
       console.error('Error response:', error.response);
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to submit application';
       toast.error(errorMessage);
+    },
+  });
+
+  const enhanceMutation = useMutation({
+    mutationFn: () => enhancementApi.enhanceJobDescription(job.description, job.title),
+    onSuccess: (response) => {
+      setEnhancedDescription(response.data);
+      toast.success('Job description enhanced successfully!');
+    },
+    onError: (error) => {
+      const errorMsg = error.response?.data?.detail || error.message || 'Failed to enhance job description';
+      toast.error(errorMsg);
     },
   });
 
@@ -120,8 +134,63 @@ const JobDetail = () => {
 
       <div className="job-content">
         <div className="job-description">
-          <h2>Job Description</h2>
-          <p>{job.description}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h2>Job Description</h2>
+            {user?.role === 'recruiter' && (
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={() => enhanceMutation.mutate()}
+                disabled={enhanceMutation.isLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Sparkles size={16} />
+                {enhanceMutation.isLoading ? 'Enhancing...' : 'Enhance with AI'}
+              </button>
+            )}
+          </div>
+          {enhancedDescription ? (
+            <div>
+              <div className="enhanced-description" style={{ 
+                padding: '15px', 
+                backgroundColor: '#f0f9ff', 
+                borderRadius: '8px',
+                marginBottom: '15px',
+                border: '1px solid #bae6fd'
+              }}>
+                <h3 style={{ marginTop: 0, color: '#0369a1' }}>✨ AI-Enhanced Description</h3>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{enhancedDescription.improved_description}</p>
+                {enhancedDescription.identified_issues && enhancedDescription.identified_issues.length > 0 && (
+                  <div className="issues" style={{ marginTop: '15px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: '600' }}>Issues Identified:</h4>
+                    <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+                      {enhancedDescription.identified_issues.map((issue, idx) => (
+                        <li key={idx} style={{ marginBottom: '4px' }}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {enhancedDescription.improvements && enhancedDescription.improvements.length > 0 && (
+                  <div className="improvements" style={{ marginTop: '15px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: '600' }}>Improvements Made:</h4>
+                    <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+                      {enhancedDescription.improvements.map((improvement, idx) => (
+                        <li key={idx} style={{ marginBottom: '4px' }}>{improvement}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <button 
+                  className="btn btn-outline btn-sm" 
+                  onClick={() => setEnhancedDescription(null)}
+                  style={{ marginTop: '10px' }}
+                >
+                  Show Original
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p>{job.description}</p>
+          )}
         </div>
 
         {job.requirements && (

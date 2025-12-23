@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { jobsApi } from '../api/jobs';
+import { enhancementApi } from '../api/enhancement';
 import { useAuth } from '../context/AuthContext';
-import { X } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './Modal.css';
 
@@ -18,6 +19,7 @@ const JobModal = ({ job, onClose }) => {
   });
 
   const queryClient = useQueryClient();
+  const [enhancedDescription, setEnhancedDescription] = useState(null);
 
   useEffect(() => {
     if (job) {
@@ -64,6 +66,18 @@ const JobModal = ({ job, onClose }) => {
       }
       
       toast.error(errorMessage);
+    },
+  });
+
+  const enhanceMutation = useMutation({
+    mutationFn: () => enhancementApi.enhanceJobDescription(formData.description, formData.title),
+    onSuccess: (response) => {
+      setEnhancedDescription(response.data);
+      toast.success('Job description enhanced successfully!');
+    },
+    onError: (error) => {
+      const errorMsg = error.response?.data?.detail || error.message || 'Failed to enhance job description';
+      toast.error(errorMsg);
     },
   });
 
@@ -116,7 +130,80 @@ const JobModal = ({ job, onClose }) => {
           </div>
 
           <div className="form-group">
-            <label>Description *</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label>Description *</label>
+              {isRecruiter && formData.description && (
+                <button 
+                  type="button"
+                  className="btn btn-sm btn-secondary" 
+                  onClick={() => enhanceMutation.mutate()}
+                  disabled={enhanceMutation.isLoading}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+                >
+                  <Sparkles size={14} />
+                  {enhanceMutation.isLoading ? 'Enhancing...' : 'Enhance with AI'}
+                </button>
+              )}
+            </div>
+            {enhancedDescription ? (
+              <div>
+                <div className="enhanced-description" style={{ 
+                  padding: '12px', 
+                  backgroundColor: '#f0f9ff', 
+                  borderRadius: '6px',
+                  marginBottom: '10px',
+                  border: '1px solid #bae6fd',
+                  fontSize: '13px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ margin: 0, color: '#0369a1', fontSize: '14px' }}>✨ AI-Enhanced Description</h4>
+                    <button 
+                      type="button"
+                      className="btn btn-sm btn-primary" 
+                      onClick={() => {
+                        setFormData({ ...formData, description: enhancedDescription.improved_description });
+                        setEnhancedDescription(null);
+                        toast.success('Enhanced description applied to form!');
+                      }}
+                      style={{ fontSize: '11px', padding: '4px 8px' }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                  <p style={{ whiteSpace: 'pre-wrap', marginBottom: '10px', fontSize: '13px' }}>
+                    {enhancedDescription.improved_description}
+                  </p>
+                  {enhancedDescription.identified_issues && enhancedDescription.identified_issues.length > 0 && (
+                    <div className="issues" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #bae6fd' }}>
+                      <h5 style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>Issues Identified:</h5>
+                      <ul style={{ margin: '4px 0', paddingLeft: '18px', fontSize: '12px' }}>
+                        {enhancedDescription.identified_issues.map((issue, idx) => (
+                          <li key={idx} style={{ marginBottom: '3px' }}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {enhancedDescription.improvements && enhancedDescription.improvements.length > 0 && (
+                    <div className="improvements" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #bae6fd' }}>
+                      <h5 style={{ fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>Improvements Made:</h5>
+                      <ul style={{ margin: '4px 0', paddingLeft: '18px', fontSize: '12px' }}>
+                        {enhancedDescription.improvements.map((improvement, idx) => (
+                          <li key={idx} style={{ marginBottom: '3px' }}>{improvement}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <button 
+                    type="button"
+                    className="btn btn-outline btn-sm" 
+                    onClick={() => setEnhancedDescription(null)}
+                    style={{ marginTop: '8px', fontSize: '11px', padding: '4px 8px' }}
+                  >
+                    Show Original
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <textarea
               name="description"
               value={formData.description}

@@ -17,6 +17,8 @@ export const profileApi = {
     });
   },
   
+  generateSummary: () => client.post('/profile/resume/generate-summary'),
+  
   delete: () => client.delete('/profile'),
 };
 

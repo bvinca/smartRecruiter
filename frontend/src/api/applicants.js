@@ -30,5 +30,11 @@ export const applicantsApi = {
       responseType: 'blob',
     });
   },
+  regenerateQuestions: (applicantId, feedback, numQuestions = 5) => {
+    return client.post(`/applicants/${applicantId}/regenerate-questions`, {
+      feedback,
+      num_questions: numQuestions,
+    });
+  },
 };
 

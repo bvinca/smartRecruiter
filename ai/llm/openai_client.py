@@ -25,9 +25,17 @@ class OpenAIClient:
     """Handles OpenAI API connections with retry logic"""
     
     def __init__(self):
-        if not settings.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY not set in environment")
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        api_key = settings.OPENAI_API_KEY
+        if not api_key or not api_key.strip():
+            raise ValueError("OPENAI_API_KEY not set in environment or is empty")
+        
+        # Validate API key format (should start with 'sk-')
+        if not api_key.startswith('sk-'):
+            raise ValueError(f"Invalid OpenAI API key format. Key should start with 'sk-'. Got: {api_key[:10]}...")
+        
+        print(f"OpenAIClient: Initializing with API key (length: {len(api_key)}, starts with: {api_key[:7]})")
+        self.client = OpenAI(api_key=api_key)
+        print("OpenAIClient: Successfully initialized OpenAI client")
         self.default_model = "gpt-4o-mini"
         self.max_retries = 3
         self.retry_delay = 1.0

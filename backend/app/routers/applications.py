@@ -20,7 +20,37 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 
 resume_parser = ResumeParser()
 scoring_service = ScoringService()
-rag_pipeline = RAGPipeline()
+
+# Lazy-load RAG pipeline only when needed to avoid unnecessary OpenAI API calls
+_rag_pipeline = None
+
+def get_rag_pipeline():
+    """Get or create RAGPipeline (lazy initialization)"""
+    global _rag_pipeline
+    if _rag_pipeline is None:
+        try:
+            # Check API key before initializing
+            from app.config import settings
+            api_key = settings.OPENAI_API_KEY
+            if not api_key or not api_key.strip():
+                print("RAG pipeline: OPENAI_API_KEY not set or empty in environment")
+                _rag_pipeline = None
+                return None
+            
+            print(f"RAG pipeline: Initializing with API key (length: {len(api_key)})...")
+            _rag_pipeline = RAGPipeline()
+            print("RAG pipeline: Successfully initialized")
+        except ValueError as e:
+            import traceback
+            print(f"RAG pipeline: ValueError during initialization: {e}")
+            print(f"RAG pipeline: Traceback: {traceback.format_exc()}")
+            _rag_pipeline = None
+        except Exception as e:
+            import traceback
+            print(f"RAG pipeline: Unexpected error during initialization: {e}")
+            print(f"RAG pipeline: Traceback: {traceback.format_exc()}")
+            _rag_pipeline = None
+    return _rag_pipeline
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -109,34 +139,76 @@ async def apply_to_job(
             db_applicant.education_score = scores["education_score"]
             db_applicant.overall_score = scores["overall_score"]
             
-            # Step 4: AI Processing (RAG + GPT) - Generate summary
+            # Step 4: AI Processing (RAG + GPT) - Generate summary (lazy-load)
             try:
-                summary_data = rag_pipeline.generate_summary(
-                    resume_text=parsed_data.get("resume_text", ""),
-                    job_description=job.description
-                )
-                # Only store summary if it's not the fallback error message
-                summary_text = summary_data.get("summary", "")
-                if summary_text and summary_text != "Unable to generate AI summary at this time.":
-                    db_applicant.ai_summary = summary_text
+                rag_pipeline = get_rag_pipeline()
+                if rag_pipeline:
+                    print(f"Generating AI summary for applicant {db_applicant.id}...")
+                    summary_data = rag_pipeline.generate_summary(
+                        resume_text=parsed_data.get("resume_text", ""),
+                        job_description=job.description
+                    )
+                    # Only store summary if it's not the fallback error message
+                    summary_text = summary_data.get("summary", "")
+                    error_detail = summary_data.get("error", "")
+                    
+                    if summary_text and summary_text != "Unable to generate AI summary at this time." and not summary_text.startswith("Unable to generate"):
+                        db_applicant.ai_summary = summary_text
+                        print(f"Successfully generated and stored AI summary")
+                    else:
+                        # Don't store fallback message - leave as None
+                        db_applicant.ai_summary = None
+                        if error_detail:
+                            print(f"Summary generation failed: {error_detail}")
+                        else:
+                            print("Summary generation returned error message, not storing")
                 else:
-                    # Don't store fallback message - leave as None
+                    print("RAG pipeline not available, skipping AI summary generation")
                     db_applicant.ai_summary = None
             except Exception as e:
+                import traceback
                 print(f"Error generating summary with RAG: {e}")
+                print(f"Traceback: {traceback.format_exc()}")
                 db_applicant.ai_summary = None
             
-            # Generate interview questions
+            # Generate interview questions (lazy-load)
             try:
                 if not db_applicant.interview_questions:
-                    questions = rag_pipeline.generate_interview_questions(
-                        resume_text=parsed_data.get("resume_text", ""),
-                        job_description=job.description,
-                        num_questions=5
-                    )
-                    db_applicant.interview_questions = questions
+                    rag_pipeline = get_rag_pipeline()
+                    if rag_pipeline:
+                        print(f"Generating interview questions for applicant {db_applicant.id}...")
+                        questions = rag_pipeline.generate_interview_questions(
+                            resume_text=parsed_data.get("resume_text", ""),
+                            job_description=job.description,
+                            num_questions=5
+                        )
+                        # Check if questions are default/placeholder questions
+                        if questions and isinstance(questions, list) and len(questions) > 0:
+                            # Check if first question is a default question
+                            default_questions = [
+                                "Tell me about your experience with the technologies mentioned in this role.",
+                                "Describe a challenging project you worked on and how you solved it.",
+                                "How do you stay updated with industry trends?",
+                                "What motivates you in your career?",
+                                "Why are you interested in this position?"
+                            ]
+                            is_default = questions[0] in default_questions if questions else False
+                            
+                            if not is_default:
+                                db_applicant.interview_questions = questions
+                                print(f"Successfully generated and stored {len(questions)} interview questions")
+                            else:
+                                print("Generated questions appear to be default/placeholder questions, not storing")
+                                db_applicant.interview_questions = None
+                        else:
+                            print("No questions generated or empty list")
+                            db_applicant.interview_questions = None
+                    else:
+                        print("RAG pipeline not available, skipping interview question generation")
             except Exception as e:
+                import traceback
                 print(f"Error generating interview questions: {e}")
+                print(f"Traceback: {traceback.format_exc()}")
             
             # Store embeddings for semantic matching (Step 7: Candidate Ranking)
             try:

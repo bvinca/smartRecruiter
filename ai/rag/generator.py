@@ -29,19 +29,43 @@ class RAGGenerator:
     """Generate context-aware responses using RAG"""
     
     def __init__(self):
+        # Validate API key first - check for empty string too
+        api_key = settings.OPENAI_API_KEY
+        if not api_key or not api_key.strip():
+            raise ValueError("OPENAI_API_KEY not set in environment or is empty")
+        
+        print(f"RAGGenerator: Initializing with API key (length: {len(api_key)})...")
         self.use_langchain = LANGCHAIN_AVAILABLE
-        self.client = OpenAIClient()
+        
+        try:
+            self.client = OpenAIClient()
+            print("RAGGenerator: Successfully initialized OpenAIClient")
+        except Exception as e:
+            import traceback
+            print(f"RAGGenerator: Failed to initialize OpenAIClient: {e}")
+            print(f"RAGGenerator: Traceback: {traceback.format_exc()}")
+            raise
         
         if self.use_langchain:
             try:
-                self.llm = ChatOpenAI(
-                    model_name="gpt-4o-mini",
-                    temperature=0.7,
-                    openai_api_key=settings.OPENAI_API_KEY
-                )
+                # Try both parameter names for compatibility
+                try:
+                    self.llm = ChatOpenAI(
+                        model="gpt-4o-mini",
+                        temperature=0.7,
+                        api_key=settings.OPENAI_API_KEY
+                    )
+                except TypeError:
+                    # Fallback to older parameter name
+                    self.llm = ChatOpenAI(
+                        model_name="gpt-4o-mini",
+                        temperature=0.7,
+                        openai_api_key=settings.OPENAI_API_KEY
+                    )
             except Exception as e:
                 print(f"Warning: Could not initialize LangChain LLM: {e}")
                 self.use_langchain = False
+                self.llm = None
     
     def generate_summary(self, resume_text: str, job_description: str, context: Optional[List[str]] = None) -> Dict[str, Any]:
         """
@@ -74,21 +98,44 @@ Job Description:
         prompt += "\n\nFormat your response as:\nSUMMARY: [summary text]\nSTRENGTHS: [comma-separated list]\nWEAKNESSES: [comma-separated list]\nRECOMMENDATIONS: [comma-separated list]"
         
         try:
+            print(f"RAGGenerator: Generating summary with OpenAI. Resume length: {len(resume_text)}, Job desc length: {len(job_description)}")
             if self.use_langchain and self.llm:
+                print("RAGGenerator: Using LangChain LLM")
                 response = self.llm.invoke(prompt)
                 content = response.content if hasattr(response, 'content') else str(response)
             else:
+                print("RAGGenerator: Using OpenAIClient directly")
+                if not self.client:
+                    raise ValueError("OpenAIClient not initialized")
                 messages = [{"role": "user", "content": prompt}]
                 content = self.client.chat_completion(messages, temperature=0.7)
             
+            print(f"RAGGenerator: Received response from OpenAI, length: {len(content)}")
+            if not content or len(content.strip()) == 0:
+                raise ValueError("Empty response from OpenAI")
             return self._parse_summary_response(content)
         except Exception as e:
+            import traceback
+            error_msg = str(e)
             print(f"Error generating summary: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
+            
+            # Provide more specific error messages
+            if "quota" in error_msg.lower() or "insufficient_quota" in error_msg.lower() or "429" in error_msg:
+                error_detail = "OpenAI API quota exceeded. Please check your billing and add credits to your OpenAI account."
+            elif "invalid" in error_msg.lower() and "api key" in error_msg.lower():
+                error_detail = "Invalid OpenAI API key. Please check your API key in the .env file."
+            elif "rate limit" in error_msg.lower():
+                error_detail = "OpenAI API rate limit exceeded. Please wait a moment and try again."
+            else:
+                error_detail = f"OpenAI API error: {error_msg}"
+            
             return {
-                "summary": "Unable to generate AI summary at this time.",
+                "summary": f"Unable to generate AI summary: {error_detail}",
                 "strengths": [],
                 "weaknesses": [],
-                "recommendations": []
+                "recommendations": [],
+                "error": error_detail
             }
     
     def generate_feedback(self, resume_text: str, job_description: str, scores: Dict[str, float], context: Optional[List[str]] = None) -> str:

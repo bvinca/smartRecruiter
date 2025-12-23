@@ -20,7 +20,20 @@ router = APIRouter(prefix="/applicants", tags=["applicants"])
 
 resume_parser = ResumeParser()
 scoring_service = ScoringService()
-rag_pipeline = RAGPipeline()
+
+# Lazy-load RAG pipeline only when needed to avoid unnecessary OpenAI API calls
+_rag_pipeline = None
+
+def get_rag_pipeline():
+    """Get or create RAGPipeline (lazy initialization)"""
+    global _rag_pipeline
+    if _rag_pipeline is None:
+        try:
+            _rag_pipeline = RAGPipeline()
+        except (ValueError, Exception) as e:
+            print(f"RAG pipeline not available: {e}")
+            _rag_pipeline = None
+    return _rag_pipeline
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -214,6 +227,13 @@ def generate_summary(applicant_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
     
     # Generate summary
+    rag_pipeline = get_rag_pipeline()
+    if not rag_pipeline:
+        raise HTTPException(
+            status_code=503,
+            detail="AI features not available. OpenAI API key not configured."
+        )
+    
     summary_data = rag_pipeline.generate_summary(
         resume_text=applicant.resume_text or "",
         job_description=job.description
@@ -272,6 +292,102 @@ def generate_summary(applicant_id: int, db: Session = Depends(get_db)):
         "weaknesses": summary_data["weaknesses"],
         "recommendations": summary_data["recommendations"]
     }
+
+
+@router.post("/{applicant_id}/regenerate-questions", response_model=dict)
+def regenerate_questions(
+    applicant_id: int,
+    request: schemas.RegenerateQuestionsRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_recruiter)
+):
+    """
+    Regenerate interview questions based on recruiter feedback
+    Only recruiters can provide feedback and regenerate questions
+    """
+    applicant = db.query(models.Applicant).filter(models.Applicant.id == applicant_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant not found")
+    
+    # Get the job to access job description
+    job = db.query(models.Job).filter(models.Job.id == applicant.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Verify the recruiter owns this job
+    if job.recruiter_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only regenerate questions for applicants in your own jobs")
+    
+    # Check if applicant has interview questions
+    if not applicant.interview_questions or len(applicant.interview_questions) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No existing interview questions found. Please generate questions first."
+        )
+    
+    # Get RAG pipeline
+    rag_pipeline = get_rag_pipeline()
+    if not rag_pipeline:
+        raise HTTPException(
+            status_code=503,
+            detail="AI features not available. OpenAI API key not configured."
+        )
+    
+    try:
+        print(f"Regenerating questions for applicant {applicant_id} with feedback: {request.feedback[:100]}...")
+        
+        # Regenerate questions with feedback
+        new_questions = rag_pipeline.regenerate_questions_with_feedback(
+            resume_text=applicant.resume_text or "",
+            current_questions=applicant.interview_questions,
+            feedback=request.feedback,
+            job_description=job.description or "",
+            num_questions=request.num_questions or 5
+        )
+        
+        # Check if questions are valid (not default/error messages)
+        if new_questions and isinstance(new_questions, list) and len(new_questions) > 0:
+            default_questions = [
+                "Tell me about your experience with the technologies mentioned in this role.",
+                "Describe a challenging project you worked on and how you solved it.",
+                "How do you stay updated with industry trends?",
+                "What motivates you in your career?",
+                "Why are you interested in this position?"
+            ]
+            is_default = new_questions[0] in default_questions if new_questions else False
+            
+            if not is_default:
+                # Update applicant with new questions
+                applicant.interview_questions = new_questions
+                db.commit()
+                db.refresh(applicant)
+                
+                print(f"Successfully regenerated and stored {len(new_questions)} interview questions")
+                return {
+                    "success": True,
+                    "message": f"Successfully regenerated {len(new_questions)} interview questions",
+                    "questions": new_questions
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Regenerated questions appear to be default/placeholder questions. Please check your OpenAI API quota.",
+                    "questions": applicant.interview_questions  # Return original questions
+                }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to regenerate questions. Please try again.",
+                "questions": applicant.interview_questions  # Return original questions
+            }
+    except Exception as e:
+        import traceback
+        print(f"Error regenerating questions: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error regenerating questions: {str(e)}"
+        )
 
 
 @router.put("/{applicant_id}", response_model=schemas.Applicant)

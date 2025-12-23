@@ -14,11 +14,20 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from app.database import get_db
 from app import models, schemas
 from ai.embeddings import EmbeddingVectorizer, SimilarityCalculator
+from ai import utils as ai_utils
 from app.dependencies import require_recruiter
 
 router = APIRouter(prefix="/ranking", tags=["ranking"])
 
-vectorizer = EmbeddingVectorizer()
+# Lazy-load vectorizer only when needed to avoid unnecessary OpenAI API calls
+_vectorizer = None
+
+def get_vectorizer():
+    """Get or create EmbeddingVectorizer (lazy initialization)"""
+    global _vectorizer
+    if _vectorizer is None:
+        _vectorizer = EmbeddingVectorizer()
+    return _vectorizer
 
 
 @router.get("/job/{job_id}", response_model=List[schemas.RankedCandidateResponse])
@@ -52,7 +61,8 @@ def rank_candidates_for_job(
     if not applicants:
         return []
     
-    # Generate job description embedding
+    # Generate job description embedding (lazy-load vectorizer)
+    vectorizer = get_vectorizer()
     job_text = f"{job.title}\n{job.description}\n{job.requirements or ''}"
     job_embedding = vectorizer.generate_embedding(job_text)
     
@@ -106,6 +116,17 @@ def rank_candidates_for_job(
             "ai_summary": applicant.ai_summary,
             "status": applicant.status
         })
+    
+    # Normalize scores per job posting (Stage 6: Normalization and Ranking)
+    match_scores = [c["match_score"] for c in ranked_candidates]
+    if match_scores and len(set(match_scores)) > 1:  # Only normalize if scores vary
+        normalized_scores = ai_utils.normalize_scores(match_scores)
+        for candidate, normalized_score in zip(ranked_candidates, normalized_scores):
+            candidate["normalized_score"] = normalized_score
+    else:
+        # All scores are the same, use original scores
+        for candidate in ranked_candidates:
+            candidate["normalized_score"] = candidate["match_score"]
     
     # Sort by match score descending
     ranked_candidates.sort(key=lambda x: x["match_score"], reverse=True)

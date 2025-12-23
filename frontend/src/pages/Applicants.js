@@ -5,7 +5,9 @@ import { applicantsApi } from '../api/applicants';
 import { applicationsApi } from '../api/applications';
 import { jobsApi } from '../api/jobs';
 import { rankingApi } from '../api/ranking';
-import { Upload, TrendingUp, FileText, Sparkles, Download, Award, MessageSquare, CheckCircle, XCircle, UserCheck } from 'lucide-react';
+import { Upload, TrendingUp, FileText, Sparkles, Download, Award, MessageSquare, CheckCircle, XCircle, UserCheck, Shield } from 'lucide-react';
+import { fairnessApi } from '../api/fairness';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import UploadModal from '../components/UploadModal';
 import ApplicantDetail from '../components/ApplicantDetail';
@@ -19,7 +21,9 @@ const Applicants = () => {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [showRanking, setShowRanking] = useState(false);
+  const [fairnessAudit, setFairnessAudit] = useState(null);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   // Get applications which include applicant data
   const { data: applications = [], isLoading: appsLoading } = useQuery({
@@ -130,6 +134,18 @@ const Applicants = () => {
     },
   });
 
+  const auditFairnessMutation = useMutation({
+    mutationFn: () => fairnessApi.auditFairness(jobId),
+    onSuccess: (response) => {
+      setFairnessAudit(response.data);
+      toast.success('Fairness audit complete!');
+    },
+    onError: (error) => {
+      const errorMsg = error.response?.data?.detail || error.message || 'Failed to audit fairness';
+      toast.error(errorMsg);
+    },
+  });
+
   const handleStatusUpdate = (applicationId, status) => {
     if (!applicationId) {
       toast.error('Application ID not found');
@@ -194,6 +210,17 @@ const Applicants = () => {
         <div className="filter-info">
           <span>Filtered by job: {jobs.find(j => j.id === parseInt(jobId))?.title || 'Unknown'}</span>
           <div>
+            {user?.role === 'recruiter' && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => auditFairnessMutation.mutate()}
+                disabled={auditFairnessMutation.isLoading}
+                style={{ marginRight: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Shield size={16} />
+                {auditFairnessMutation.isLoading ? 'Auditing...' : 'Audit Fairness'}
+              </button>
+            )}
             <button
               className="btn btn-outline btn-sm"
               onClick={() => setShowRanking(!showRanking)}
@@ -203,6 +230,90 @@ const Applicants = () => {
             </button>
             <a href="/applicants" style={{ marginLeft: '1rem' }}>Clear filter</a>
           </div>
+        </div>
+      )}
+
+      {fairnessAudit && (
+        <div className="fairness-audit" style={{
+          margin: '20px 0',
+          padding: '20px',
+          backgroundColor: fairnessAudit.bias_detected ? '#fef2f2' : '#f0fdf4',
+          borderRadius: '8px',
+          border: `1px solid ${fairnessAudit.bias_detected ? '#fecaca' : '#bbf7d0'}`
+        }}>
+          <h3 style={{ marginTop: 0, color: fairnessAudit.bias_detected ? '#dc2626' : '#16a34a' }}>
+            <Shield size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+            Fairness Audit Results
+          </h3>
+          <div className={`audit-status ${fairnessAudit.bias_detected ? 'bias-detected' : 'no-bias'}`} style={{ marginBottom: '15px' }}>
+            {fairnessAudit.bias_detected ? (
+              <p style={{ color: '#dc2626', fontWeight: '600', fontSize: '16px' }}>
+                ⚠️ Potential bias detected
+              </p>
+            ) : (
+              <p style={{ color: '#16a34a', fontWeight: '600', fontSize: '16px' }}>
+                ✅ No significant bias detected
+              </p>
+            )}
+          </div>
+          
+          <div className="audit-details" style={{ marginBottom: '15px' }}>
+            <p style={{ margin: '4px 0', fontSize: '14px' }}>
+              <strong>Bias Magnitude:</strong> {fairnessAudit.bias_magnitude}%
+            </p>
+            <p style={{ margin: '4px 0', fontSize: '14px' }}>
+              <strong>Statistical Significance:</strong> {(fairnessAudit.statistical_significance * 100).toFixed(1)}%
+            </p>
+            {fairnessAudit.threshold_used && (
+              <p style={{ margin: '4px 0', fontSize: '14px' }}>
+                <strong>Threshold Used:</strong> {fairnessAudit.threshold_used}%
+              </p>
+            )}
+          </div>
+          
+          {fairnessAudit.group_analysis && Object.keys(fairnessAudit.group_analysis).length > 0 && (
+            <div className="group-analysis" style={{ marginBottom: '15px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>Group Analysis:</h4>
+              {Object.entries(fairnessAudit.group_analysis).map(([group, data]) => (
+                <div key={group} style={{ 
+                  marginBottom: '8px', 
+                  padding: '8px', 
+                  backgroundColor: 'white', 
+                  borderRadius: '4px',
+                  fontSize: '14px'
+                }}>
+                  <strong>{group}:</strong> Mean Score: {data.mean_score?.toFixed(1)}% 
+                  {data.std_dev !== undefined && ` (Std Dev: ${data.std_dev.toFixed(1)})`}
+                  {data.count !== undefined && ` - Count: ${data.count}`}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {fairnessAudit.recommendations && fairnessAudit.recommendations.length > 0 && (
+            <div className="recommendations">
+              <h4 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>Recommendations:</h4>
+              <ul style={{ margin: '4px 0', paddingLeft: '20px', fontSize: '14px' }}>
+                {fairnessAudit.recommendations.map((rec, idx) => (
+                  <li key={idx} style={{ marginBottom: '4px' }}>{rec}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {fairnessAudit.message && (
+            <p style={{ marginTop: '12px', fontSize: '14px', fontStyle: 'italic' }}>
+              {fairnessAudit.message}
+            </p>
+          )}
+          
+          <button 
+            className="btn btn-outline btn-sm" 
+            onClick={() => setFairnessAudit(null)}
+            style={{ marginTop: '12px' }}
+          >
+            Close
+          </button>
         </div>
       )}
 

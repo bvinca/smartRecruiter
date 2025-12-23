@@ -34,9 +34,16 @@ class RAGRetriever:
         
         if self.use_langchain:
             try:
-                self.embeddings = OpenAIEmbeddings(
-                    openai_api_key=settings.OPENAI_API_KEY
-                )
+                # Try both parameter names for compatibility
+                try:
+                    self.embeddings = OpenAIEmbeddings(
+                        api_key=settings.OPENAI_API_KEY
+                    )
+                except TypeError:
+                    # Fallback to older parameter name
+                    self.embeddings = OpenAIEmbeddings(
+                        openai_api_key=settings.OPENAI_API_KEY
+                    )
                 persist_directory = settings.CHROMA_PERSIST_DIR
                 os.makedirs(persist_directory, exist_ok=True)
             except Exception as e:

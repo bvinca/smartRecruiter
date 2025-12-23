@@ -203,6 +203,91 @@ class ApplicationUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class RegenerateQuestionsRequest(BaseModel):
+    feedback: str
+    num_questions: Optional[int] = 5
+
+
+# AI Enhancement Schemas
+class JobDescriptionEnhancementRequest(BaseModel):
+    description: str
+    title: Optional[str] = None
+
+
+class JobDescriptionEnhancementResponse(BaseModel):
+    improved_description: str
+    identified_issues: List[str]
+    explanation: str
+    bias_detected: bool
+    improvements: List[str]
+    llm_available: bool
+
+
+class ResumeFeedbackRequest(BaseModel):
+    resume_text: str
+    job_description: Optional[str] = None
+    job_requirements: Optional[str] = None
+
+
+class ResumeFeedbackResponse(BaseModel):
+    missing_skills: List[str]
+    suggested_phrasing: List[Dict[str, str]]
+    summary_feedback: str
+    strengths: List[str]
+    weaknesses: List[str]
+    keyword_suggestions: List[str]
+    llm_available: bool
+
+
+class FairnessAuditRequest(BaseModel):
+    job_id: Optional[int] = None
+    group_key: Optional[str] = "group"
+    score_key: Optional[str] = "overall_score"
+    threshold: Optional[float] = 10.0
+
+
+class FairnessAuditResponse(BaseModel):
+    bias_detected: bool
+    bias_magnitude: float
+    group_analysis: Dict[str, Dict[str, Any]]
+    recommendations: List[str]
+    statistical_significance: float
+    message: str
+
+
+class XAIExplanationRequest(BaseModel):
+    applicant_id: int
+    job_id: Optional[int] = None
+
+
+class XAIExplanationResponse(BaseModel):
+    skills_explanation: str
+    experience_explanation: str
+    education_explanation: str
+    soft_skills_explanation: str
+    strengths: List[str]
+    weaknesses: List[str]
+    overall_summary: str
+    score_breakdown: Dict[str, Dict[str, Any]]
+    llm_available: bool
+
+
+class SkillGapAnalysisRequest(BaseModel):
+    job_id: int
+    applicant_id: int
+
+
+class SkillGapAnalysisResponse(BaseModel):
+    skill_matches: Dict[str, float]
+    missing_skills: List[str]
+    strong_matches: List[str]
+    weak_matches: List[str]
+    overall_alignment: float
+    total_job_skills: int
+    matched_skills: int
+    message: str
+
+
 class ApplicationResponse(BaseModel):
     id: int
     user_id: int

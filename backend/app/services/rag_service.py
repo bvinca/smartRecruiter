@@ -33,19 +33,36 @@ class RAGService:
         self.use_langchain = LANGCHAIN_AVAILABLE
         
         if self.use_langchain:
-            self.llm = ChatOpenAI(
-                model_name="gpt-4o-mini",
-                temperature=0.7,
-                openai_api_key=settings.OPENAI_API_KEY
-            )
-            
-            self.embeddings = OpenAIEmbeddings(
-                openai_api_key=settings.OPENAI_API_KEY
-            )
-            
-            # Initialize ChromaDB
-            persist_directory = settings.CHROMA_PERSIST_DIR
-            os.makedirs(persist_directory, exist_ok=True)
+            try:
+                # Try both parameter names for compatibility
+                try:
+                    self.llm = ChatOpenAI(
+                        model="gpt-4o-mini",
+                        temperature=0.7,
+                        api_key=settings.OPENAI_API_KEY
+                    )
+                    self.embeddings = OpenAIEmbeddings(
+                        api_key=settings.OPENAI_API_KEY
+                    )
+                except TypeError:
+                    # Fallback to older parameter names
+                    self.llm = ChatOpenAI(
+                        model_name="gpt-4o-mini",
+                        temperature=0.7,
+                        openai_api_key=settings.OPENAI_API_KEY
+                    )
+                    self.embeddings = OpenAIEmbeddings(
+                        openai_api_key=settings.OPENAI_API_KEY
+                    )
+                
+                # Initialize ChromaDB
+                persist_directory = settings.CHROMA_PERSIST_DIR
+                os.makedirs(persist_directory, exist_ok=True)
+            except Exception as e:
+                print(f"Warning: Could not initialize LangChain: {e}")
+                self.use_langchain = False
+                self.llm = None
+                self.embeddings = None
         else:
             self.llm = None
             self.embeddings = None

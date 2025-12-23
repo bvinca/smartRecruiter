@@ -37,20 +37,36 @@ class QuestionGenerator:
         
         # Check model preference
         model_choice = settings.QUESTION_GENERATION_MODEL.lower()
+        
+        # Check if API key is actually set (not empty string)
+        api_key_set = settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip()
+        
         if model_choice == "auto":
             # Use HuggingFace if OpenAI key is not set, otherwise use OpenAI
-            if settings.OPENAI_API_KEY:
+            if api_key_set:
                 model_choice = "openai"
             else:
+                print("QuestionGenerator: OPENAI_API_KEY not set or empty, using HuggingFace")
                 model_choice = "huggingface"
         
-        if model_choice == "openai" and settings.OPENAI_API_KEY:
+        if model_choice == "openai" and api_key_set:
             try:
+                print(f"QuestionGenerator: Initializing OpenAI client with API key (length: {len(settings.OPENAI_API_KEY)})...")
                 self.client = OpenAIClient()
                 self.use_openai = True
-                print("QuestionGenerator: Using OpenAI GPT-4o-mini")
+                print("QuestionGenerator: Successfully initialized OpenAI GPT-4o-mini")
+            except ValueError as e:
+                print(f"QuestionGenerator: OpenAI API key validation failed: {e}")
+                if "not set" in str(e).lower():
+                    print("QuestionGenerator: Falling back to HuggingFace")
+                    model_choice = "huggingface"
+                else:
+                    raise
             except Exception as e:
-                print(f"Failed to initialize OpenAI client: {e}, falling back to HuggingFace")
+                import traceback
+                print(f"QuestionGenerator: Failed to initialize OpenAI client: {e}")
+                print(f"QuestionGenerator: Traceback: {traceback.format_exc()}")
+                print("QuestionGenerator: Falling back to HuggingFace")
                 model_choice = "huggingface"
         
         if model_choice == "huggingface" or not self.use_openai:
@@ -110,11 +126,14 @@ Return only the questions, one per line, numbered 1-{num_questions}."""
         
         try:
             if self.use_openai and self.client:
+                print(f"QuestionGenerator: Generating {num_questions} questions using OpenAI...")
                 messages = [
                     {"role": "system", "content": "You are a professional recruiter. Generate relevant, specific interview questions."},
                     {"role": "user", "content": prompt}
                 ]
                 content = self.client.chat_completion(messages, max_tokens=500)
+                
+                print(f"QuestionGenerator: Received response from OpenAI (length: {len(content)})")
                 
                 # Parse questions from response
                 questions = []
@@ -126,7 +145,13 @@ Return only the questions, one per line, numbered 1-{num_questions}."""
                         if question:
                             questions.append(question)
                 
-                return questions[:num_questions] if questions else self._default_questions()
+                if questions:
+                    print(f"QuestionGenerator: Successfully parsed {len(questions)} questions")
+                    return questions[:num_questions]
+                else:
+                    print("QuestionGenerator: No questions parsed from response, using default questions")
+                    print(f"QuestionGenerator: Response content: {content[:200]}")
+                    return self._default_questions()
             elif self.use_huggingface and self.t5_model and self.t5_tokenizer:
                 # Use T5 for question generation
                 # T5 works best with prefix-style prompts
@@ -207,10 +232,101 @@ Return only the questions, one per line, numbered 1-{num_questions}."""
                 return questions[:num_questions] if questions else self._default_questions()
             else:
                 # Fallback to default questions
+                print("QuestionGenerator: No OpenAI or HuggingFace model available, using default questions")
                 return self._default_questions()
         except Exception as e:
-            print(f"Error generating interview questions: {e}")
+            import traceback
+            print(f"QuestionGenerator: Error generating interview questions: {e}")
+            print(f"QuestionGenerator: Traceback: {traceback.format_exc()}")
             return self._default_questions()
+    
+    def regenerate_questions_with_feedback(
+        self,
+        parsed_data: Dict[str, Any],
+        current_questions: List[str],
+        feedback: str,
+        job_description: Optional[str] = None,
+        num_questions: int = 5
+    ) -> List[str]:
+        """
+        Regenerate interview questions based on recruiter feedback
+        
+        Args:
+            parsed_data: Parsed resume data dictionary
+            current_questions: Current list of questions that need improvement
+            feedback: Recruiter's feedback on the current questions
+            job_description: Optional job description for context
+            num_questions: Number of questions to generate
+            
+        Returns:
+            List of improved interview questions
+        """
+        resume_text = parsed_data.get("resume_text", "")
+        skills = parsed_data.get("skills", [])
+        work_experience = parsed_data.get("work_experience", [])
+        
+        current_questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(current_questions)])
+        
+        prompt = f"""A recruiter has provided feedback on the following interview questions. Please regenerate {num_questions} improved questions based on their feedback.
+
+Current Questions:
+{current_questions_text}
+
+Recruiter Feedback:
+{feedback}
+
+Candidate Resume:
+{resume_text[:1500]}
+
+Key Skills: {', '.join(skills[:10])}
+Work Experience: {len(work_experience)} positions
+
+{f'Job Description: {job_description[:500]}' if job_description else ''}
+
+Please generate {num_questions} improved interview questions that address the recruiter's feedback. The new questions should:
+1. Address the specific concerns mentioned in the feedback
+2. Still be relevant to the candidate's resume and the job
+3. Be specific and actionable
+4. Be better than the original questions based on the feedback
+
+Return only the questions, one per line, numbered 1-{num_questions}."""
+        
+        try:
+            if self.use_openai and self.client:
+                print(f"QuestionGenerator: Regenerating {num_questions} questions with feedback using OpenAI...")
+                messages = [
+                    {"role": "system", "content": "You are a professional recruiter. Generate improved interview questions based on feedback."},
+                    {"role": "user", "content": prompt}
+                ]
+                content = self.client.chat_completion(messages, max_tokens=600)
+                
+                print(f"QuestionGenerator: Received regenerated response from OpenAI (length: {len(content)})")
+                
+                # Parse questions from response
+                questions = []
+                for line in content.split('\n'):
+                    line = line.strip()
+                    if line and (line[0].isdigit() or line.startswith('-')):
+                        # Remove numbering
+                        question = re.sub(r'^\d+[\.\)]\s*|^-\s*', '', line)
+                        if question:
+                            questions.append(question)
+                
+                if questions:
+                    print(f"QuestionGenerator: Successfully parsed {len(questions)} regenerated questions")
+                    return questions[:num_questions]
+                else:
+                    print("QuestionGenerator: No questions parsed from regenerated response, using default questions")
+                    return self._default_questions()
+            else:
+                # Fallback: return current questions if OpenAI not available
+                print("QuestionGenerator: OpenAI not available for regeneration, returning current questions")
+                return current_questions
+        except Exception as e:
+            import traceback
+            print(f"QuestionGenerator: Error regenerating questions: {e}")
+            print(f"QuestionGenerator: Traceback: {traceback.format_exc()}")
+            return current_questions  # Return original questions on error
     
     def _default_questions(self) -> List[str]:
         """Default interview questions if AI generation fails"""
