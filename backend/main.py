@@ -9,8 +9,9 @@ if root_path not in sys.path:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
-from app.routers import jobs, applicants, auth, applications, profile, interviews, analytics, resume, ranking, enhancement, fairness, explanation, visualization
+from app.routers import jobs, applicants, auth, applications, profile, interviews, analytics, resume, ranking, enhancement, fairness, explanation, visualization, emails, feedback
 from app.database import engine, Base
 
 # Create database tables
@@ -45,6 +46,14 @@ app.include_router(enhancement.router)  # AI enhancement features
 app.include_router(fairness.router)  # Fairness auditing
 app.include_router(explanation.router)  # XAI explanations
 app.include_router(visualization.router)  # Skill gap visualization
+app.include_router(emails.router)  # AI email generation
+app.include_router(feedback.router)  # Adaptive learning feedback
+
+# Serve visualization images
+import os
+reports_dir = os.path.join(os.path.dirname(__file__), '../ai/reports')
+if os.path.exists(reports_dir):
+    app.mount("/reports", StaticFiles(directory=reports_dir), name="reports")
 
 
 @app.get("/")

@@ -235,4 +235,159 @@ class FairnessChecker:
                 f"✅ No significant bias detected. "
                 f"Score difference ({bias_magnitude:.2f}%) is within acceptable threshold ({threshold}%)."
             )
+    
+    def mean_score_difference(
+        self,
+        candidate_data: List[Dict[str, Any]],
+        group_col: str = "group",
+        score_col: str = "overall_score"
+    ) -> float:
+        """
+        Calculate Mean Score Difference (MSD) between groups
+        MSD = max(group_mean) - min(group_mean)
+        
+        Target: < 10 points difference
+        """
+        if not PANDAS_AVAILABLE or not candidate_data:
+            return 0.0
+        
+        try:
+            df = pd.DataFrame(candidate_data)
+            if group_col not in df.columns or score_col not in df.columns:
+                return 0.0
+            
+            group_means = df.groupby(group_col)[score_col].mean()
+            msd = float(group_means.max() - group_means.min())
+            return round(msd, 2)
+        except Exception as e:
+            print(f"FairnessChecker: Error calculating MSD: {e}")
+            return 0.0
+    
+    def disparate_impact_ratio(
+        self,
+        candidate_data: List[Dict[str, Any]],
+        group_col: str = "group",
+        score_col: str = "overall_score",
+        threshold: float = 70.0
+    ) -> float:
+        """
+        Calculate Disparate Impact Ratio (DIR)
+        DIR = min(pass_rate) / max(pass_rate)
+        
+        Target: 0.8 ≤ DIR ≤ 1.2 (80% rule)
+        """
+        if not PANDAS_AVAILABLE or not candidate_data:
+            return 1.0
+        
+        try:
+            df = pd.DataFrame(candidate_data)
+            if group_col not in df.columns or score_col not in df.columns:
+                return 1.0
+            
+            # Calculate pass rates (scores >= threshold) for each group
+            pass_rates = df.groupby(group_col)[score_col].apply(
+                lambda x: (x >= threshold).mean()
+            )
+            
+            if len(pass_rates) < 2:
+                return 1.0
+            
+            min_rate = float(pass_rates.min())
+            max_rate = float(pass_rates.max())
+            
+            if max_rate == 0:
+                return 1.0
+            
+            dir_value = min_rate / max_rate
+            return round(dir_value, 3)
+        except Exception as e:
+            print(f"FairnessChecker: Error calculating DIR: {e}")
+            return 1.0
+    
+    def comprehensive_fairness_audit(
+        self,
+        candidate_data: List[Dict[str, Any]],
+        group_key: str = "group",
+        score_key: str = "overall_score",
+        threshold: float = 10.0,
+        pass_threshold: float = 70.0
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive fairness audit with MSD and DIR metrics
+        
+        Returns:
+            Dictionary with all fairness metrics:
+            {
+                "bias_detected": bool,
+                "bias_magnitude": float,
+                "mean_score_difference": float,  # MSD
+                "disparate_impact_ratio": float,  # DIR
+                "group_analysis": Dict,
+                "recommendations": List[str],
+                "statistical_significance": float,
+                "fairness_status": str  # "fair", "warning", "bias_detected"
+            }
+        """
+        # Run standard audit
+        audit_result = self.audit_fairness(
+            candidate_data=candidate_data,
+            group_key=group_key,
+            score_key=score_key,
+            threshold=threshold
+        )
+        
+        # Add MSD and DIR
+        msd = self.mean_score_difference(candidate_data, group_key, score_key)
+        dir_value = self.disparate_impact_ratio(candidate_data, group_key, score_key, pass_threshold)
+        
+        # Determine fairness status
+        fairness_status = "fair"
+        if audit_result["bias_detected"] or msd > threshold:
+            fairness_status = "bias_detected"
+        elif msd > threshold * 0.7 or dir_value < 0.8 or dir_value > 1.2:
+            fairness_status = "warning"
+        
+        # Add recommendations based on MSD and DIR
+        recommendations = audit_result.get("recommendations", [])
+        
+        if msd > threshold:
+            recommendations.append(
+                f"⚠️ Mean Score Difference ({msd:.2f} points) exceeds threshold ({threshold} points). "
+                "Review scoring criteria for potential bias."
+            )
+        else:
+            recommendations.append(
+                f"✅ Mean Score Difference ({msd:.2f} points) is within acceptable range."
+            )
+        
+        if dir_value < 0.8:
+            recommendations.append(
+                f"⚠️ Disparate Impact Ratio ({dir_value:.3f}) indicates potential adverse impact. "
+                "The 80% rule suggests bias may be present."
+            )
+        elif dir_value > 1.2:
+            recommendations.append(
+                f"⚠️ Disparate Impact Ratio ({dir_value:.3f}) indicates reverse bias. "
+                "Review scoring to ensure fairness."
+            )
+        else:
+            recommendations.append(
+                f"✅ Disparate Impact Ratio ({dir_value:.3f}) is within acceptable range (0.8-1.2)."
+            )
+        
+        return {
+            **audit_result,
+            "mean_score_difference": msd,
+            "disparate_impact_ratio": dir_value,
+            "fairness_status": fairness_status,
+            "recommendations": recommendations,
+            "metrics_summary": {
+                "msd_target": "< 10 points",
+                "msd_actual": f"{msd:.2f} points",
+                "dir_target": "0.8 - 1.2",
+                "dir_actual": f"{dir_value:.3f}",
+                "msd_status": "✅ Pass" if msd <= threshold else "⚠️ Fail",
+                "dir_status": "✅ Pass" if 0.8 <= dir_value <= 1.2 else "⚠️ Fail"
+            }
+        }
 

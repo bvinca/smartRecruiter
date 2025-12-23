@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Mail, Phone, Briefcase, GraduationCap, Sparkles, MessageSquare, UserCheck, XCircle, CheckCircle, RefreshCw, FileText, HelpCircle, TrendingUp, ExternalLink } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { X, Mail, Phone, Briefcase, GraduationCap, Sparkles, MessageSquare, UserCheck, XCircle, CheckCircle, RefreshCw, FileText, HelpCircle, TrendingUp, ExternalLink, Send } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell } from 'recharts';
 import { applicationsApi } from '../api/applications';
 import { applicantsApi } from '../api/applicants';
 import { enhancementApi } from '../api/enhancement';
 import { explanationApi } from '../api/explanation';
 import { visualizationApi } from '../api/visualization';
+import { emailsApi } from '../api/emails';
+import { feedbackApi } from '../api/feedback';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import './Modal.css';
@@ -22,6 +24,10 @@ const ApplicantDetail = ({ applicant, onClose }) => {
   const [explanation, setExplanation] = useState(null);
   const [skillGap, setSkillGap] = useState(null);
   const [chartView, setChartView] = useState('bar'); // 'bar' or 'radar'
+  const [generatedEmail, setGeneratedEmail] = useState(null);
+  const [emailMessageType, setEmailMessageType] = useState('feedback');
+  const [showEmailGenerator, setShowEmailGenerator] = useState(false);
+  const [showEmailHistory, setShowEmailHistory] = useState(false);
   // Local state to hold updated applicant data
   const [localApplicant, setLocalApplicant] = useState(applicant);
   
@@ -121,11 +127,64 @@ const ApplicantDetail = ({ applicant, onClose }) => {
     },
   });
 
-  const handleStatusUpdate = (applicationId, status) => {
+  const generateEmailMutation = useMutation({
+    mutationFn: () => emailsApi.generateForApplicant(
+      localApplicant.id,
+      emailMessageType
+    ),
+    onSuccess: (response) => {
+      setGeneratedEmail(response.data);
+      toast.success('Email generated successfully!');
+      // Refresh email history
+      queryClient.invalidateQueries(['emailHistory', localApplicant.id]);
+    },
+    onError: (error) => {
+      const errorMsg = error.response?.data?.detail || error.message || 'Failed to generate email';
+      toast.error(errorMsg);
+    },
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: (emailId) => emailsApi.sendEmail(emailId),
+    onSuccess: (response) => {
+      toast.success('Email sent successfully!');
+      // Refresh email history
+      queryClient.invalidateQueries(['emailHistory', localApplicant.id]);
+      // Update generated email if it's the same one
+      if (generatedEmail && generatedEmail.email_id === response.data.email_id) {
+        setGeneratedEmail({ ...generatedEmail, sent: true, sent_at: response.data.sent_at });
+      }
+    },
+    onError: (error) => {
+      const errorMsg = error.response?.data?.detail || error.message || 'Failed to send email';
+      toast.error(errorMsg);
+    },
+  });
+
+  // Fetch email history
+  const { data: emailHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['emailHistory', localApplicant.id],
+    queryFn: () => emailsApi.getApplicantHistory(localApplicant.id),
+    enabled: showEmailHistory && !!localApplicant.id,
+  });
+
+  const handleStatusUpdate = async (applicationId, status) => {
     if (!applicationId) {
       toast.error('Application ID not found');
       return;
     }
+    
+    // Record decision for adaptive learning if it's a final decision (hired/rejected)
+    if (status === 'hired' || status === 'rejected') {
+      try {
+        await feedbackApi.recordDecision(applicationId, status === 'hired', null);
+        toast.success('Decision recorded for adaptive learning');
+      } catch (error) {
+        console.error('Error recording decision:', error);
+        // Don't block the status update if feedback recording fails
+      }
+    }
+    
     updateStatusMutation.mutate({ applicationId, status });
   };
   return (
@@ -262,6 +321,215 @@ const ApplicantDetail = ({ applicant, onClose }) => {
                           <li key={idx}>{weakness}</li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {isRecruiter && (localApplicant.job_id || localApplicant.job?.id) && (
+            <div className="detail-section">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3>AI Email Communication</h3>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    className="btn btn-sm btn-outline" 
+                    onClick={() => {
+                      setShowEmailHistory(!showEmailHistory);
+                      if (!showEmailHistory) {
+                        queryClient.invalidateQueries(['emailHistory', localApplicant.id]);
+                      }
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+                  >
+                    <Mail size={14} />
+                    {showEmailHistory ? 'Hide History' : 'View History'}
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-outline" 
+                    onClick={() => setShowEmailGenerator(!showEmailGenerator)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+                  >
+                    <Mail size={14} />
+                    {showEmailGenerator ? 'Hide' : 'Generate Email'}
+                  </button>
+                </div>
+              </div>
+              
+              {showEmailHistory && (
+                <div style={{ marginTop: '15px', marginBottom: '15px' }}>
+                  <h4 style={{ fontSize: '15px', marginBottom: '12px' }}>Email History</h4>
+                  {historyLoading ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>Loading email history...</div>
+                  ) : emailHistory.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#666', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
+                      No emails generated yet
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                      {emailHistory.map((email) => (
+                        <div
+                          key={email.id}
+                          style={{
+                            padding: '12px',
+                            marginBottom: '10px',
+                            backgroundColor: email.sent ? '#d1fae5' : '#fff3cd',
+                            borderRadius: '6px',
+                            border: `1px solid ${email.sent ? '#10b981' : '#f59e0b'}`,
+                            fontSize: '13px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+                            <div>
+                              <strong>{email.message_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong>
+                              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                                To: {email.recipient_email}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#666' }}>
+                                {email.sent ? (
+                                  <>Sent: {new Date(email.sent_at).toLocaleString()}</>
+                                ) : (
+                                  <>Generated: {new Date(email.created_at).toLocaleString()}</>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              {email.sent ? (
+                                <span style={{ fontSize: '11px', color: '#10b981', fontWeight: '600' }}>
+                                  <CheckCircle size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                                  Sent
+                                </span>
+                              ) : (
+                                <button
+                                  className="btn btn-sm btn-primary"
+                                  onClick={() => sendEmailMutation.mutate(email.id)}
+                                  disabled={sendEmailMutation.isLoading}
+                                  style={{ fontSize: '11px', padding: '4px 8px' }}
+                                >
+                                  <Send size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                                  {sendEmailMutation.isLoading ? 'Sending...' : 'Send'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              padding: '8px',
+                              backgroundColor: '#fff',
+                              borderRadius: '4px',
+                              marginTop: '8px',
+                              maxHeight: '150px',
+                              overflowY: 'auto',
+                              whiteSpace: 'pre-wrap',
+                              fontSize: '12px',
+                              lineHeight: '1.5'
+                            }}
+                          >
+                            {email.email_content.substring(0, 200)}
+                            {email.email_content.length > 200 && '...'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {showEmailGenerator && (
+                <div style={{ marginTop: '15px' }}>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+                      Email Type:
+                    </label>
+                    <select
+                      value={emailMessageType}
+                      onChange={(e) => setEmailMessageType(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #ddd',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value="acknowledgment">Acknowledgment (Thank you for applying)</option>
+                      <option value="feedback">Feedback (After scoring)</option>
+                      <option value="rejection">Rejection (Not selected)</option>
+                      <option value="interview_invitation">Interview Invitation (Shortlisted)</option>
+                    </select>
+                  </div>
+                  
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => generateEmailMutation.mutate()}
+                    disabled={generateEmailMutation.isLoading}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <Send size={16} />
+                    {generateEmailMutation.isLoading ? 'Generating...' : 'Generate Email'}
+                  </button>
+                  
+                  {generatedEmail && (
+                    <div style={{
+                      marginTop: '20px',
+                      padding: '15px',
+                      backgroundColor: '#f8f9fa',
+                      borderRadius: '8px',
+                      border: '1px solid #dee2e6'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <h4 style={{ margin: 0, fontSize: '16px' }}>Generated Email</h4>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => {
+                              navigator.clipboard.writeText(generatedEmail.content);
+                              toast.success('Email copied to clipboard!');
+                            }}
+                            style={{ fontSize: '12px', padding: '4px 8px' }}
+                          >
+                            Copy
+                          </button>
+                          {generatedEmail.email_id && (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              onClick={() => sendEmailMutation.mutate(generatedEmail.email_id)}
+                              disabled={sendEmailMutation.isLoading || (generatedEmail.sent === true)}
+                              style={{ fontSize: '12px', padding: '4px 8px' }}
+                            >
+                              {generatedEmail.sent ? (
+                                <>
+                                  <CheckCircle size={12} style={{ marginRight: '4px' }} />
+                                  Sent
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={12} style={{ marginRight: '4px' }} />
+                                  {sendEmailMutation.isLoading ? 'Sending...' : 'Send Email'}
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: '10px', fontSize: '13px', color: '#666' }}>
+                        <strong>To:</strong> {generatedEmail.recipient_email}<br />
+                        <strong>Type:</strong> {generatedEmail.message_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </div>
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#fff',
+                        borderRadius: '6px',
+                        border: '1px solid #e9ecef',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '14px',
+                        lineHeight: '1.6',
+                        maxHeight: '400px',
+                        overflowY: 'auto'
+                      }}>
+                        {generatedEmail.content}
+                      </div>
                     </div>
                   )}
                 </div>

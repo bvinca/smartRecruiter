@@ -97,6 +97,9 @@ class Application(Base):
     applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=True)  # Link to parsed applicant data
     status = Column(String(50), default="pending")  # pending, reviewing, shortlisted, rejected, hired
     notes = Column(Text)
+    # Adaptive learning: Track recruiter decision for learning
+    hire_decision = Column(Boolean, nullable=True)  # True = hired, False = rejected, None = pending
+    ai_score_at_decision = Column(Float, nullable=True)  # Store AI score when decision was made
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
@@ -131,3 +134,47 @@ class Interview(Base):
     # Relationships
     application = relationship("Application", backref="interviews")
 
+
+class EmailLog(Base):
+    __tablename__ = "email_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=True)  # Nullable for user-based applications
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    recipient_email = Column(String(255), nullable=False)
+    message_type = Column(String(50), nullable=False)  # acknowledgment, feedback, rejection, interview_invitation
+    email_content = Column(Text, nullable=False)
+    sent = Column(Boolean, default=False)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    applicant = relationship("Applicant", backref="email_logs")
+    job = relationship("Job", backref="email_logs")
+
+
+class ScoringWeights(Base):
+    """
+    Stores adaptive scoring weights that learn from recruiter feedback
+    Weights are adjusted based on hiring decisions vs AI predictions
+    """
+    __tablename__ = "scoring_weights"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null = global weights
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)  # Null = global, specific = job-specific
+    
+    # Adaptive weights (must sum to ~1.0)
+    skill_weight = Column(Float, default=0.4, nullable=False)
+    experience_weight = Column(Float, default=0.3, nullable=False)
+    education_weight = Column(Float, default=0.1, nullable=False)
+    semantic_similarity_weight = Column(Float, default=0.2, nullable=False)
+    
+    # Metadata
+    iteration_count = Column(Integer, default=0)  # Number of learning iterations
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    recruiter = relationship("User", backref="scoring_weights")
+    job = relationship("Job", backref="scoring_weights")

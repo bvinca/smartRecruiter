@@ -8,6 +8,15 @@ export const fairnessApi = {
       score_key: scoreKey,
       threshold: threshold
     });
+  },
+  
+  generateVisualization: (jobId = null, groupKey = 'group', scoreKey = 'overall_score', threshold = 10.0) => {
+    return client.post('/fairness/visualize', {
+      job_id: jobId,
+      group_key: groupKey,
+      score_key: scoreKey,
+      threshold: threshold
+    });
   }
 };
 

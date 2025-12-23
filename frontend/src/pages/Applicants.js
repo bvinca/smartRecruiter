@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import UploadModal from '../components/UploadModal';
 import ApplicantDetail from '../components/ApplicantDetail';
+import FairnessDashboard from '../components/FairnessDashboard';
 import './Applicants.css';
 
 const Applicants = () => {
@@ -22,6 +23,7 @@ const Applicants = () => {
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [showRanking, setShowRanking] = useState(false);
   const [fairnessAudit, setFairnessAudit] = useState(null);
+  const [showFairnessDashboard, setShowFairnessDashboard] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -211,15 +213,25 @@ const Applicants = () => {
           <span>Filtered by job: {jobs.find(j => j.id === parseInt(jobId))?.title || 'Unknown'}</span>
           <div>
             {user?.role === 'recruiter' && (
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => auditFairnessMutation.mutate()}
-                disabled={auditFairnessMutation.isLoading}
-                style={{ marginRight: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Shield size={16} />
-                {auditFairnessMutation.isLoading ? 'Auditing...' : 'Audit Fairness'}
-              </button>
+              <>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setShowFairnessDashboard(!showFairnessDashboard)}
+                  style={{ marginRight: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Shield size={16} />
+                  {showFairnessDashboard ? 'Hide' : 'Show'} Fairness Dashboard
+                </button>
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => auditFairnessMutation.mutate()}
+                  disabled={auditFairnessMutation.isLoading}
+                  style={{ marginRight: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Shield size={16} />
+                  {auditFairnessMutation.isLoading ? 'Auditing...' : 'Quick Audit'}
+                </button>
+              </>
             )}
             <button
               className="btn btn-outline btn-sm"
@@ -230,6 +242,12 @@ const Applicants = () => {
             </button>
             <a href="/applicants" style={{ marginLeft: '1rem' }}>Clear filter</a>
           </div>
+        </div>
+      )}
+
+      {showFairnessDashboard && jobId && user?.role === 'recruiter' && (
+        <div style={{ margin: '20px 0' }}>
+          <FairnessDashboard jobId={parseInt(jobId)} />
         </div>
       )}
 

@@ -410,3 +410,87 @@ class ParsedResumeData(BaseModel):
     education: List[Dict[str, Any]]
     experience_years: float
     work_experience: List[Dict[str, Any]]
+
+
+# Email Schemas
+class EmailGenerateRequest(BaseModel):
+    message_type: str  # acknowledgment, feedback, rejection, interview_invitation
+    tone: Optional[str] = None
+    additional_context: Optional[Dict[str, Any]] = None
+
+
+class EmailGenerateResponse(BaseModel):
+    email_id: int
+    content: str
+    recipient_email: str
+    candidate_name: str
+    job_title: str
+    message_type: str
+    generated_at: str
+
+
+class EmailHistoryResponse(BaseModel):
+    id: int
+    recipient_email: str
+    message_type: str
+    email_content: str
+    sent: bool
+    sent_at: Optional[str] = None
+    created_at: str
+
+
+class EmailSendRequest(BaseModel):
+    subject: Optional[str] = None
+
+
+class EmailSendResponse(BaseModel):
+    success: bool
+    email_id: int
+    recipient_email: str
+    sent_at: str
+    message: str
+
+
+# Adaptive Learning / Feedback Schemas
+class FeedbackEntry(BaseModel):
+    """Single feedback entry for learning"""
+    application_id: int
+    hired: bool
+    ai_score: Optional[float] = None
+    skill_score: Optional[float] = None
+    experience_score: Optional[float] = None
+    education_score: Optional[float] = None
+    semantic_score: Optional[float] = None
+
+
+class FeedbackRequest(BaseModel):
+    """Request to submit feedback for adaptive learning"""
+    feedback_data: List[FeedbackEntry]
+    learning_rate: Optional[float] = 0.1  # 0.0 to 1.0
+    recruiter_id: Optional[int] = None
+    job_id: Optional[int] = None
+
+
+class FeedbackResponse(BaseModel):
+    """Response after processing feedback"""
+    success: bool
+    message: str
+    updated_weights: Dict[str, float]
+    iteration_count: int
+
+
+class WeightsResponse(BaseModel):
+    """Current scoring weights"""
+    skill_weight: float
+    experience_weight: float
+    education_weight: float
+    semantic_similarity_weight: float
+    iteration_count: int
+    last_updated: Optional[str] = None
+
+
+class ApplicationDecisionRequest(BaseModel):
+    """Request to record hiring decision for an application"""
+    application_id: int
+    hired: bool  # True = hired, False = rejected
+    notes: Optional[str] = None

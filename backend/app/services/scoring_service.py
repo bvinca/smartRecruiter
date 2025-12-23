@@ -16,20 +16,24 @@ from ai.embeddings import EmbeddingVectorizer, SimilarityCalculator
 from ai.rag import RAGPipeline
 from ai.evaluation import CandidateEvaluator
 from ai import utils as ai_utils
+from typing import Optional
+from sqlalchemy.orm import Session
 
 
 class ScoringService:
     """
     Service for scoring candidates against job requirements
     Implements hybrid approach: 50% semantic similarity + 50% LLM reasoning
+    Supports adaptive weights that learn from recruiter feedback
     """
     
-    def __init__(self):
+    def __init__(self, db: Optional[Session] = None):
         self.vectorizer = EmbeddingVectorizer()
         self.rag_pipeline = RAGPipeline()
         self.evaluator = CandidateEvaluator()
         # Weight for hybrid scoring (0.5 = 50% semantic, 50% LLM)
         self.semantic_weight = 0.5
+        self.db = db
     
     def calculate_scores(
         self,
@@ -39,7 +43,10 @@ class ScoringService:
         applicant_skills: List[str],
         applicant_experience_years: float,
         applicant_education: List[Dict[str, Any]],
-        applicant_work_experience: List[Dict[str, Any]]
+        applicant_work_experience: List[Dict[str, Any]],
+        recruiter_id: Optional[int] = None,
+        job_id: Optional[int] = None,
+        use_adaptive_weights: bool = True
     ) -> Dict[str, Any]:
         """
         Calculate comprehensive scores for candidate using hybrid approach
@@ -99,13 +106,37 @@ class ScoringService:
         education_score = semantic_education_score
         
         # ===== STAGE 4: Final Weighted Overall Score =====
-        # Combine all dimensions with weights
-        overall_score = (
-            hybrid_overall * 0.35 +
-            hybrid_skill * 0.30 +
-            hybrid_experience * 0.25 +
-            education_score * 0.10
-        )
+        # Use adaptive weights if available, otherwise use defaults
+        if use_adaptive_weights and self.db:
+            try:
+                from app.services.learning_service import AdaptiveWeightLearner
+                learner = AdaptiveWeightLearner(self.db)
+                weights = learner.get_weights(recruiter_id, job_id)
+                
+                # Use adaptive weights
+                overall_score = (
+                    hybrid_skill * weights["skill_weight"] +
+                    hybrid_experience * weights["experience_weight"] +
+                    education_score * weights["education_weight"] +
+                    hybrid_overall * weights["semantic_similarity_weight"]
+                )
+            except Exception as e:
+                print(f"ScoringService: Error loading adaptive weights: {e}, using defaults")
+                # Fallback to default weights
+                overall_score = (
+                    hybrid_overall * 0.35 +
+                    hybrid_skill * 0.30 +
+                    hybrid_experience * 0.25 +
+                    education_score * 0.10
+                )
+        else:
+            # Default weights
+            overall_score = (
+                hybrid_overall * 0.35 +
+                hybrid_skill * 0.30 +
+                hybrid_experience * 0.25 +
+                education_score * 0.10
+            )
         
         # Generate comprehensive explanation
         explanation = self._generate_hybrid_explanation(

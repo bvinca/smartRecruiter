@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
     
+    # Email/SMTP Configuration
+    # IMPORTANT: Gmail App Passwords should NOT have spaces - they will be automatically removed
+    SMTP_ENABLED: bool = True  # Set to True to enable email sending
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = "smartrecruiter878@gmail.com"  # Your email address
+    SMTP_PASSWORD: str = "rbab wnmi jacn twvk"  # Gmail App Password (spaces will be auto-removed)
+    SMTP_FROM_EMAIL: str = "smartrecruiter878@gmail.com"  # From email address (defaults to SMTP_USER)
+    SMTP_FROM_NAME: str = "SmartRecruiter"  # From name
+    SMTP_USE_TLS: bool = True
+    SMTP_TIMEOUT: int = 10  # Timeout in seconds for SMTP operations
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

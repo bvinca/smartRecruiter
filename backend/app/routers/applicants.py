@@ -174,15 +174,20 @@ def score_applicant(applicant_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    # Calculate scores
-    scores = scoring_service.calculate_scores(
+    # Calculate scores with adaptive weights
+    from app.services.scoring_service import ScoringService
+    scoring_service_instance = ScoringService(db=db)
+    scores = scoring_service_instance.calculate_scores(
         resume_text=applicant.resume_text or "",
         job_description=job.description,
         job_requirements=job.requirements or "",
         applicant_skills=applicant.skills or [],
         applicant_experience_years=applicant.experience_years or 0.0,
         applicant_education=applicant.education or [],
-        applicant_work_experience=applicant.work_experience or []
+        applicant_work_experience=applicant.work_experience or [],
+        recruiter_id=job.recruiter_id,
+        job_id=job.id,
+        use_adaptive_weights=True
     )
     
     # Update applicant scores

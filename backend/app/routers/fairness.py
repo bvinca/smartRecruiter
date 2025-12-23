@@ -15,6 +15,7 @@ from app.database import get_db
 from app import models, schemas
 from app.dependencies import require_recruiter
 from ai.evaluation.fairness_checker import FairnessChecker
+from ai.evaluation.bias_visualizer import BiasVisualizer
 
 router = APIRouter(prefix="/fairness", tags=["fairness"])
 
@@ -127,11 +128,13 @@ def audit_fairness(
             })
     
     try:
-        result = fairness_checker.audit_fairness(
+        # Use comprehensive fairness audit with MSD and DIR
+        result = fairness_checker.comprehensive_fairness_audit(
             candidate_data=candidate_data,
-            group_key=request.group_key,
-            score_key=request.score_key,
-            threshold=request.threshold
+            group_key=request.group_key or "group",
+            score_key=request.score_key or "overall_score",
+            threshold=request.threshold or 10.0,
+            pass_threshold=70.0
         )
         return result
     except Exception as e:
@@ -141,5 +144,123 @@ def audit_fairness(
         raise HTTPException(
             status_code=500,
             detail=f"Error auditing fairness: {str(e)}"
+        )
+
+
+@router.post("/visualize")
+def generate_fairness_visualization(
+    request: schemas.FairnessAuditRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_recruiter)
+):
+    """
+    Generate fairness visualization heatmap and distribution plots
+    Only recruiters can access this
+    """
+    from ai.evaluation.bias_visualizer import BiasVisualizer
+    
+    visualizer = BiasVisualizer()
+    fairness_checker = get_fairness_checker()
+    
+    # Get candidate data (same logic as audit endpoint)
+    if request.job_id:
+        job = db.query(models.Job).filter(
+            models.Job.id == request.job_id,
+            models.Job.recruiter_id == current_user.id
+        ).first()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        applicants = db.query(models.Applicant).filter(
+            models.Applicant.job_id == request.job_id
+        ).all()
+        
+        if len(applicants) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="Need at least 2 applicants to generate visualization"
+            )
+        
+        candidate_data = []
+        for applicant in applicants:
+            group = "unknown"
+            if applicant.education:
+                education_text = " ".join([
+                    edu.get("degree", "") + " " + edu.get("institution", "")
+                    for edu in applicant.education
+                ]).lower()
+                
+                stem_keywords = ['computer', 'engineering', 'science', 'technology', 'math', 'statistics']
+                if any(keyword in education_text for keyword in stem_keywords):
+                    group = "stem"
+                else:
+                    group = "non_stem"
+            else:
+                group = "no_education"
+            
+            candidate_data.append({
+                "group": group,
+                "overall_score": applicant.overall_score or 0.0,
+                "skill_score": applicant.skill_score or 0.0,
+                "experience_score": applicant.experience_score or 0.0
+            })
+    else:
+        applicants = db.query(models.Applicant).all()
+        
+        if len(applicants) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="Need at least 2 applicants to generate visualization"
+            )
+        
+        candidate_data = []
+        for applicant in applicants:
+            group = "unknown"
+            if applicant.education:
+                education_text = " ".join([
+                    edu.get("degree", "") + " " + edu.get("institution", "")
+                    for edu in applicant.education
+                ]).lower()
+                
+                stem_keywords = ['computer', 'engineering', 'science', 'technology', 'math', 'statistics']
+                if any(keyword in education_text for keyword in stem_keywords):
+                    group = "stem"
+                else:
+                    group = "non_stem"
+            else:
+                group = "no_education"
+            
+            candidate_data.append({
+                "group": group,
+                "overall_score": applicant.overall_score or 0.0,
+                "skill_score": applicant.skill_score or 0.0,
+                "experience_score": applicant.experience_score or 0.0
+            })
+    
+    try:
+        # Generate comprehensive report
+        output_prefix = f"fairness_job_{request.job_id}" if request.job_id else "fairness_global"
+        report = visualizer.generate_comprehensive_report(
+            candidate_data=candidate_data,
+            group_col=request.group_key or "group",
+            score_col=request.score_key or "overall_score",
+            output_prefix=output_prefix
+        )
+        
+        return {
+            "success": report.get("success", False),
+            "heatmap_path": report.get("heatmap", {}).get("file_path"),
+            "distribution_path": report.get("distribution", {}).get("file_path"),
+            "summary_statistics": report.get("summary_statistics", {}),
+            "message": "Visualization generated successfully"
+        }
+    except Exception as e:
+        import traceback
+        print(f"Error generating visualization: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating visualization: {str(e)}"
         )
 
