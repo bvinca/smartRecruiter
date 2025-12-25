@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
-from app.routers import jobs, applicants, auth, applications, profile, interviews, analytics, resume, ranking, enhancement, fairness, explanation, visualization, emails, feedback
+from app.routers import jobs, applicants, auth, applications, profile, interviews, analytics, resume, ranking, enhancement, fairness, explanation, visualization, emails, feedback, recommendations
 from app.database import engine, Base
 
 # Create database tables
@@ -48,6 +48,7 @@ app.include_router(explanation.router)  # XAI explanations
 app.include_router(visualization.router)  # Skill gap visualization
 app.include_router(emails.router)  # AI email generation
 app.include_router(feedback.router)  # Adaptive learning feedback
+app.include_router(recommendations.router)  # AI recommendations
 
 # Serve visualization images
 import os

@@ -1,13 +1,17 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, FileText, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { Briefcase, FileText, CheckCircle, Clock, XCircle, Sparkles } from 'lucide-react';
 import { applicationsApi } from '../api/applications';
 import { jobsApi } from '../api/jobs';
+import { recommendationsApi } from '../api/recommendations';
+import RecommendationWidget from '../components/RecommendationWidget';
+import { useAuth } from '../context/AuthContext';
 import './ApplicantDashboard.css';
 
 const ApplicantDashboard = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const { data: applications = [], isLoading: appsLoading } = useQuery({
     queryKey: ['applications'],
@@ -20,6 +24,11 @@ const ApplicantDashboard = () => {
   });
 
   const isLoading = appsLoading || jobsLoading;
+
+  // Get applicant ID from first application
+  const applicantId = applications.length > 0 && applications[0]?.applicant?.id 
+    ? applications[0].applicant.id 
+    : null;
 
   const statusCounts = {
     pending: applications.filter(app => app.status === 'pending').length,
@@ -44,6 +53,17 @@ const ApplicantDashboard = () => {
         <h1>Dashboard</h1>
         <p>Track your job applications and discover opportunities</p>
       </div>
+
+      {/* Job Recommendations */}
+      {applicantId && (
+        <div className="recommendations-section">
+          <RecommendationWidget 
+            type="jobs" 
+            applicantId={applicantId}
+            onSelect={(job) => navigate(`/applicant/jobs/${job.id}`)}
+          />
+        </div>
+      )}
 
       <div className="dashboard-stats">
         <div className="stat-card">

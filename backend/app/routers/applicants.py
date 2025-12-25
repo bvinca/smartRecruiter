@@ -205,6 +205,22 @@ def score_applicant(applicant_id: int, db: Session = Depends(get_db)):
     )
     db.add(embedding)
     
+    # Log scoring decision for audit trail
+    try:
+        from ai.explanation.xai_logger import XAILogger
+        logger = XAILogger(db=db)
+        logger.log_scoring_decision(
+            applicant_id=applicant.id,
+            job_id=job.id,
+            scores=scores,
+            explanation=scores.get("explanation"),
+            scoring_method=scores.get("score_breakdown", {}).get("scoring_method", "hybrid"),
+            llm_available=scores.get("score_breakdown", {}).get("llm", {}).get("available", False)
+        )
+    except Exception as e:
+        print(f"Error logging scoring decision: {e}")
+        # Don't fail the request if logging fails
+    
     db.commit()
     db.refresh(applicant)
     

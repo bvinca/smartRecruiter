@@ -252,7 +252,8 @@ class EmailService:
                 "acknowledgment": "Thank You for Your Application",
                 "feedback": "Application Feedback",
                 "rejection": "Application Update",
-                "interview_invitation": "Interview Invitation"
+                "interview_invitation": "Interview Invitation",
+                "hired": "Job Offer - Congratulations!"
             }
             subject = message_type_titles.get(email_log.message_type, "Message from SmartRecruiter")
         

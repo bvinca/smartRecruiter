@@ -59,10 +59,25 @@ def register(user_data: schemas.UserRegister, db: Session = Depends(get_db)):
         expires_delta=access_token_expires
     )
     
+    # Convert SQLAlchemy model to Pydantic model
+    # Handle datetime serialization properly
+    user_dict = {
+        "id": db_user.id,
+        "email": db_user.email,
+        "role": db_user.role,
+        "first_name": db_user.first_name,
+        "last_name": db_user.last_name,
+        "company_name": db_user.company_name,
+        "is_active": db_user.is_active,
+        "created_at": db_user.created_at if db_user.created_at else None
+    }
+    
+    user_response = schemas.UserResponse(**user_dict)
+    
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": schemas.UserResponse.from_orm(db_user)
+        "user": user_response
     }
 
 
@@ -86,10 +101,25 @@ def login(
         expires_delta=access_token_expires
     )
     
+    # Convert SQLAlchemy model to Pydantic model
+    # Handle datetime serialization properly
+    user_dict = {
+        "id": user.id,
+        "email": user.email,
+        "role": user.role,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "company_name": user.company_name,
+        "is_active": user.is_active,
+        "created_at": user.created_at if user.created_at else None
+    }
+    
+    user_response = schemas.UserResponse(**user_dict)
+    
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": schemas.UserResponse.from_orm(user)
+        "user": user_response
     }
 
 

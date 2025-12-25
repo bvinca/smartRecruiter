@@ -17,6 +17,10 @@ export const fairnessApi = {
       score_key: scoreKey,
       threshold: threshold
     });
+  },
+
+  getTrends: (jobId) => {
+    return client.get(`/fairness/trends/${jobId}`);
   }
 };
 

@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, Users, TrendingUp, FileText } from 'lucide-react';
+import { Briefcase, Users, TrendingUp, FileText, Shield } from 'lucide-react';
 import { jobsApi } from '../api/jobs';
 import { analyticsApi } from '../api/analytics';
+import { fairnessApi } from '../api/fairness';
 import JobModal from '../components/JobModal';
+import FairnessChart from '../components/FairnessChart';
+import FairnessTrendsWidget from '../components/FairnessTrendsWidget';
 import './RecruiterDashboard.css';
 
 const RecruiterDashboard = () => {

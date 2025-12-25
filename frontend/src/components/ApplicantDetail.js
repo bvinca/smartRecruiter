@@ -457,6 +457,7 @@ const ApplicantDetail = ({ applicant, onClose }) => {
                       <option value="feedback">Feedback (After scoring)</option>
                       <option value="rejection">Rejection (Not selected)</option>
                       <option value="interview_invitation">Interview Invitation (Shortlisted)</option>
+                      <option value="hired">Job Offer (Hired)</option>
                     </select>
                   </div>
                   

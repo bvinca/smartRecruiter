@@ -178,3 +178,71 @@ class ScoringWeights(Base):
     # Relationships
     recruiter = relationship("User", backref="scoring_weights")
     job = relationship("Job", backref="scoring_weights")
+
+
+class AIAuditLog(Base):
+    """
+    Audit log for AI scoring decisions and explanations
+    Stores all AI scoring operations for traceability and accountability
+    """
+    __tablename__ = "ai_audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    applicant_id = Column(Integer, ForeignKey("applicants.id"), nullable=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    
+    # Scoring data
+    overall_score = Column(Float, nullable=False)
+    skill_score = Column(Float, nullable=True)
+    experience_score = Column(Float, nullable=True)
+    education_score = Column(Float, nullable=True)
+    match_score = Column(Float, nullable=True)
+    
+    # Explanation data
+    explanation = Column(Text, nullable=True)  # XAI explanation text
+    explanation_json = Column(JSON, nullable=True)  # Structured explanation data
+    
+    # Fairness data
+    bias_magnitude = Column(Float, nullable=True)
+    fairness_status = Column(String(50), nullable=True)  # fair, warning, bias_detected
+    
+    # Metadata
+    scoring_method = Column(String(100), nullable=True)  # e.g., "hybrid", "semantic_only"
+    llm_available = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships - specify foreign_keys to avoid ambiguity
+    applicant = relationship("Applicant", foreign_keys=[applicant_id], backref="audit_logs")
+    job = relationship("Job", foreign_keys=[job_id], backref="audit_logs")
+
+
+class FairnessMetric(Base):
+    """
+    Historical fairness metrics for tracking bias over time
+    """
+    __tablename__ = "fairness_metrics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    
+    # Fairness metrics
+    mean_score_difference = Column(Float, nullable=False)  # MSD
+    disparate_impact_ratio = Column(Float, nullable=False)  # DIR
+    bias_magnitude = Column(Float, nullable=False)
+    bias_detected = Column(Boolean, default=False)
+    
+    # Group analysis
+    group_analysis = Column(JSON, nullable=True)  # Store group statistics
+    
+    # Demographic breakdown (if available)
+    gender_breakdown = Column(JSON, nullable=True)
+    experience_tier_breakdown = Column(JSON, nullable=True)
+    education_level_breakdown = Column(JSON, nullable=True)
+    
+    # Metadata
+    candidate_count = Column(Integer, nullable=False)
+    threshold_used = Column(Float, default=10.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    job = relationship("Job", backref="fairness_metrics")

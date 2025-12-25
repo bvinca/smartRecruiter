@@ -202,6 +202,17 @@ Include:
 - Professional closing
 """
         
+        elif message_type == "hired":
+            return f"""{base_info}
+Write a job offer/hiring confirmation email to the candidate for the {job_title} position.
+Be enthusiastic, congratulatory, and clear (120-180 words).
+Include:
+- Congratulations on being selected
+- Excitement about them joining the team
+- Next steps (onboarding, start date discussion, etc.)
+- Professional closing
+"""
+        
         else:
             # Generic email
             return f"""{base_info}
@@ -262,6 +273,18 @@ Congratulations! We were impressed with your application for the {job_title} pos
 We will contact you shortly to schedule a convenient time.
 
 We look forward to speaking with you.
+
+Best regards,
+Recruitment Team"""
+        
+        elif message_type == "hired":
+            return f"""Dear {candidate_name},
+
+Congratulations! We are thrilled to offer you the {job_title} position. We were very impressed with your qualifications and believe you will be a great addition to our team.
+
+We will contact you shortly to discuss the next steps, including your start date and onboarding process.
+
+We look forward to welcoming you to our team!
 
 Best regards,
 Recruitment Team"""

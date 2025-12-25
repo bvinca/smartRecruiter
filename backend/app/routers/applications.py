@@ -443,11 +443,60 @@ def update_application(
     if job.recruiter_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    # Store old status to detect changes
+    old_status = application.status
     update_data = application_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(application, field, value)
     
     db.commit()
     db.refresh(application)
+    
+    # Automatically generate and send email when status changes to hired or rejected
+    new_status = application.status
+    if old_status != new_status and (new_status == "hired" or new_status == "rejected"):
+        try:
+            from app.services.email_service import EmailService
+            email_service = EmailService()
+            
+            # Determine message type based on status
+            message_type = "hired" if new_status == "hired" else "rejection"
+            
+            # Generate email for the application
+            try:
+                email_result = email_service.generate_email_for_application(
+                    application_id=application_id,
+                    message_type=message_type,
+                    db=db
+                )
+                
+                # Automatically send the email
+                if email_result.get("email_id"):
+                    try:
+                        send_result = email_service.send_email(
+                            email_id=email_result["email_id"],
+                            db=db
+                        )
+                        print(f"✅ Auto-sent {message_type} email to {email_result.get('recipient_email')} for application {application_id}")
+                        print(f"   Email ID: {email_result.get('email_id')}, Sent at: {send_result.get('sent_at')}")
+                    except Exception as send_error:
+                        # If sending fails (e.g., SMTP not configured), log but don't fail
+                        error_msg = str(send_error)
+                        print(f"⚠️ Generated email but failed to send for application {application_id}")
+                        print(f"   Email ID: {email_result.get('email_id')}")
+                        print(f"   Recipient: {email_result.get('recipient_email')}")
+                        print(f"   Error: {error_msg}")
+                        print(f"   Note: Email was generated and saved. You can send it manually later.")
+            except Exception as email_error:
+                # Log error but don't fail the status update
+                error_msg = str(email_error)
+                print(f"⚠️ Failed to auto-generate email for application {application_id}: {error_msg}")
+                import traceback
+                print(f"   Traceback: {traceback.format_exc()}")
+                # Email generation/sending failure shouldn't block status update
+        except Exception as e:
+            # Log error but don't fail the status update
+            print(f"Error in automatic email sending for application {application_id}: {str(e)}")
+    
     return application
 
